@@ -200,7 +200,6 @@ class Flodder:
         print "Threads:", self.threads
         print "Requests:", self.requests
         print "Execution time:", self._total
-        print "Execution time:", self._total
 
         print "Requests total:", requests_total
         print "Requests successful:", requests_successful
