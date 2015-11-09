@@ -1,7 +1,7 @@
-# Flodder
+# Flooder
 **HTTP flooding tool for load testing**
 
-*usage: Flodder [-h] [-v] -j JSON [-t THREADS] [-r REQUESTS] [-ns] [-nl]*
+*usage: Flooder [-h] [-v] -j JSON [-t THREADS] [-r REQUESTS] [-ns] [-nl]*
 
 **optional arguments:**
 ```
