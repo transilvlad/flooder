@@ -10,7 +10,7 @@ import requests
 from decimal import Decimal as dec
 
 
-class Flodder:
+class Flooder:
     threads = 10
     requests = 10
     shuffle = True
@@ -43,7 +43,7 @@ class Flodder:
 
         if self.log:
             logformat = '%(asctime)-26s %(threadName)-12s %(message)s'
-            logging.basicConfig(filename=time.strftime("Flodder_%H-%M-%S_%d-%m-%Y.log"), format=logformat, level=logging.DEBUG)
+            logging.basicConfig(filename=time.strftime("Flooder_%H-%M-%S_%d-%m-%Y.log"), format=logformat, level=logging.DEBUG)
             logging.getLogger("requests").setLevel(logging.WARNING)
 
         if self._validate_list():
@@ -67,7 +67,7 @@ class Flodder:
         return
 
     def _config(self):
-        parser = argparse.ArgumentParser(prog="Flodder", description="HTTP flooding tool " + self._version,
+        parser = argparse.ArgumentParser(prog="Flooder", description="HTTP flooding tool " + self._version,
                                          epilog=self.help, formatter_class=argparse.RawTextHelpFormatter)
         parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + self._version)
         parser.add_argument('-j', '--json', required=True, type=argparse.FileType('r'), help='requests list (required, json)')
@@ -266,4 +266,4 @@ signal.signal(signal.SIGINT, catch_interrupt)
 
 
 if __name__ == '__main__':
-    Flodder()
+    Flooder()
