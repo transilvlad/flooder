@@ -22,7 +22,6 @@ class Flooder:
     shuffle = True
     log = True
     json = False
-    wait = 30
     help = "supported methods: GET, POST, PUT, DELETE\n" \
            "\n" \
            "config example:\n" \
@@ -48,7 +47,7 @@ class Flooder:
            "    ...\n" \
            "  ]\n"
 
-    _version = "1.03"
+    _version = "1.02"
     _start = 0
     _stop = 0
     _total = 0
@@ -61,7 +60,7 @@ class Flooder:
 
         if self.log:
             logformat = '%(asctime)-26s %(threadName)-12s %(message)s'
-            logging.basicConfig(filename=time.strftime("flooder_%d-%m-%Y_%H-%M-%S.log"), format=logformat, level=logging.DEBUG)
+            logging.basicConfig(filename=time.strftime("Flooder_%d-%m-%Y_%H-%M-%S.log"), format=logformat, level=logging.DEBUG)
             logging.getLogger("requests").setLevel(logging.WARNING)
 
         if self._validate_list():
@@ -69,7 +68,7 @@ class Flooder:
 
             print "[" + format_seconds(int(time.time())) + "] Flood gates opening.."
             for c in range(0, self.threads):
-                t = Thread(args=(self.json, self.requests, self.shuffle, self.log, self.wait,))
+                t = Thread(args=(self.json, self.requests, self.shuffle, self.log,))
                 self.thread_list.append(t)
                 t.daemon = False
                 t.start()
@@ -130,7 +129,6 @@ class Flooder:
         parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + self._version)
         parser.add_argument('-j', '--json', required=True, type=argparse.FileType('r'), help='requests list (required, json)')
         parser.add_argument('-t', '--threads', default=10, type=int, help='number of parallel threads to use (default: 10)')
-        parser.add_argument('-w', '--wait', default=30, type=int, help='request timeout in seconds (default: 30)')
         parser.add_argument('-r', '--requests', default=10, type=int, help='number of requests / thread (default: 10)')
         parser.add_argument('-p', '--pid', type=int, help='PID for usage monitoring (handy when flooding local services)')
         parser.add_argument('-ns', '--no-shuffle', default=False, action='store_true', help='disable shuffling of requests list')
@@ -140,7 +138,6 @@ class Flooder:
         self.json = args.json
         self.threads = args.threads
         self.requests = args.requests
-        self.wait = args.wait
         self.pid = args.pid
         if args.no_shuffle:
             self.shuffle = False
@@ -300,7 +297,7 @@ class Flooder:
                     self.cpu_ceil = p
 
             for v in self.mem:
-                self.mem_sum += dec(str(v))
+                self.mem_sum += dec(v)
 
                 if self.mem_floor == 0:
                     self.mem_floor = v
@@ -319,10 +316,9 @@ class Flooder:
             self.mem_floor = round(self.mem_floor, 1)
             self.mem_average = round(self.mem_sum / len(self.mem), 1)
 
-        if self.requests_successful > 0:
-            self.successful_fastest = '%.06f' % float(self.successful_fastest)
-            self.successful_slowest = '%.06f' % float(self.successful_slowest)
-            self.successful_average = '%.06f' % float(self.time_successful / (self.requests_successful * self.threads))
+        self.successful_fastest = '%.06f' % float(self.successful_fastest)
+        self.successful_slowest = '%.06f' % float(self.successful_slowest)
+        self.successful_average = '%.06f' % float(self.time_successful / (self.requests_successful * self.threads))
 
         if self.requests_error > 0:
             self.error_fastest = '%.06f' % float(self.error_fastest)
@@ -350,11 +346,10 @@ class Flooder:
             out.append("Requests error:       " + str(self.requests_error).rjust(13))
         if self.requests_failed > 0:
             out.append("Requests failed:      " + str(self.requests_failed).rjust(13))
-        if self.requests_successful > 0:
-            out.append(sep)
-            out.append("Successful fastest:   " + str(self.successful_fastest).rjust(13))
-            out.append("Successful slowest:   " + str(self.successful_slowest).rjust(13))
-            out.append("Successful average:   " + str(self.successful_average).rjust(13))
+        out.append(sep)
+        out.append("Successful fastest:   " + str(self.successful_fastest).rjust(13))
+        out.append("Successful slowest:   " + str(self.successful_slowest).rjust(13))
+        out.append("Successful average:   " + str(self.successful_average).rjust(13))
         if self.requests_error > 0:
             out.append(sep)
             out.append("Error fastest:        " + str(self.error_fastest).rjust(13))
@@ -399,7 +394,6 @@ class Thread(threading.Thread):
         self._requests = args[1]
         self._shuffle = args[2]
         self._log = args[3]
-        self._timeout = args[4]
         self.results = []
         self.errors = []
         self.count = 0
@@ -407,9 +401,6 @@ class Thread(threading.Thread):
         if self._shuffle:
             random.shuffle(self._list)
         return
-
-    def time(self):
-        return int(round(time.time() * 1000))
 
     def run(self):
         i = 0
@@ -435,34 +426,28 @@ class Thread(threading.Thread):
                             if self._log:
                                 logging.error("Unable to read file: " + f['value'])
 
-                microseconds = self.time()
                 try:
                     if e['type'] == "get":
-                        req = requests.get(e['url'], timeout=self._timeout)
+                        req = requests.get(e['url'])
                     elif e['type'] == "delete":
-                        req = requests.delete(e['url'], timeout=self._timeout)
+                        req = requests.delete(e['url'])
                     elif e['type'] == "put":
-                        req = requests.put(e['url'], data=payload, files=files, timeout=self._timeout)
+                        req = requests.put(e['url'], data=payload, files=files)
                     else:
-                        req = requests.post(e['url'], data=payload, files=files, timeout=self._timeout)
+                        req = requests.post(e['url'], data=payload, files=files)
                     res = {'url': e['url'], 'data': payload, 'status': req.status_code, 'content': req.text, 'time': (dec(req.elapsed.microseconds) / 1000 / 1000)}
                     if self._log:
                         logging.debug(res)
                 except Exception as ex:
                     try:
-                        elapsed = dec(str(req.elapsed.microseconds)) / 1000 / 1000
+                        elapsed = dec(req.elapsed.microseconds) / 1000 / 1000
                     except NameError:
-                        elapsed = dec(str(self.time() - microseconds)) / 1000
+                        elapsed = dec(0)
 
-                    if 'reason' in ex.message and str(ex.message.reason) not in self.errors:
+                    if str(ex.message.reason) not in self.errors:
                         self.errors.append(str(ex.message.reason))
 
-                    if 'reason' in ex.message:
-                        reason = ex.message.reason
-                    else:
-                        reason = ex.message
-
-                    res = {'url': e['url'], 'data': payload, 'status': 0, 'error': str(reason), 'time': elapsed}
+                    res = {'url': e['url'], 'data': payload, 'status': 0, 'error': str(ex.message.reason), 'time': elapsed}
                     if self._log:
                         logging.error(res)
 
@@ -477,7 +462,7 @@ class Thread(threading.Thread):
 
 
 def format_seconds(val):
-    return time.strftime("%H:%M:%S", time.gmtime(dec(str(val))))
+    return time.strftime("%H:%M:%S", time.gmtime(dec(val)))
 
 
 def check_pid(pid):
@@ -491,8 +476,8 @@ def check_pid(pid):
 
 def get_cpumem(pid):
     us = commands.getoutput("ps -p " + str(pid) + " -o pcpu= -o rss=").split()
-    us[0] = round(dec(str(us[0])), 1)
-    us[1] = round(dec(str(us[1])) / 1024, 1)
+    us[0] = round(dec(us[0]), 1)
+    us[1] = round(dec(us[1]) / 1024, 1)
     return us
 
 
