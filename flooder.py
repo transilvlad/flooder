@@ -1,16 +1,17 @@
-#!/usr/bin/python
+#!/usr/bin/env python3
 import argparse
 import json
+import logging
+import os
 import random
+import signal
+import sys
 import threading
 import time
-import os
-import sys
-import signal
-import logging
+from decimal import Decimal
+
+import subprocess
 import requests
-import commands
-from decimal import Decimal as dec
 
 
 class Flooder:
@@ -22,6 +23,7 @@ class Flooder:
     shuffle = True
     log = True
     json = False
+    wait = 30
     help = "supported methods: GET, POST, PUT, DELETE\n" \
            "\n" \
            "config example:\n" \
@@ -47,7 +49,7 @@ class Flooder:
            "    ...\n" \
            "  ]\n"
 
-    _version = "1.02"
+    _version = "1.10"
     _start = 0
     _stop = 0
     _total = 0
@@ -60,25 +62,27 @@ class Flooder:
 
         if self.log:
             logformat = '%(asctime)-26s %(threadName)-12s %(message)s'
-            logging.basicConfig(filename=time.strftime("Flooder_%d-%m-%Y_%H-%M-%S.log"), format=logformat, level=logging.DEBUG)
+            logging.basicConfig(filename=time.strftime("flooder_%d-%m-%Y_%H-%M-%S.log"), format=logformat, level=logging.DEBUG)
             logging.getLogger("requests").setLevel(logging.WARNING)
 
         if self._validate_list():
             self._start = time.time()
 
-            print "[" + format_seconds(int(time.time())) + "] Flood gates opening.."
+            print("[" + format_seconds(int(time.time())) + "] Flood gates opening..")
             for c in range(0, self.threads):
-                t = Thread(args=(self.json, self.requests, self.shuffle, self.log,))
+                t = Thread(args=(self.json, self.requests, self.shuffle, self.log, self.wait,))
                 self.thread_list.append(t)
                 t.daemon = False
                 t.start()
 
-            print "[" + format_seconds(int(time.time())) + "] Flood gates open."
+            print("[" + format_seconds(int(time.time())) + "] Flood gates open.")
 
-            print "[" + format_seconds(int(time.time())) + "] Flooding with " + str(self.requests * self.threads) + " requests via " + str(self.threads) + " threads (" + str(self.requests) + " per thread)"
+            print("[" + format_seconds(int(time.time())) + "] Flooding with " + str(
+                self.requests * self.threads) + " requests via " + str(self.threads) + " threads (" + str(
+                self.requests) + " per thread)")
 
             if self.pid > 0 and check_pid(self.pid):
-                print "[" + format_seconds(int(time.time())) + "] Monitoring PID " + str(self.pid)
+                print("[" + format_seconds(int(time.time())) + "] Monitoring PID " + str(self.pid))
             else:
                 self.pid = 0
 
@@ -104,13 +108,13 @@ class Flooder:
                         usage = get_cpumem(self.pid)
                         self.cpu.append(usage[0])
                         self.mem.append(usage[1])
-                        print "[" + format_seconds(int(time.time())) + "] PID " + str(self.pid) + " usage: CPU: " + str(usage[0]) + "%   MEM: " + str(usage[1]) + "M"
+                        print("[" + format_seconds(int(time.time())) + "] PID " + str(self.pid) + " usage: CPU: " + str(usage[0]) + "%   MEM: " + str(usage[1]) + "M")
 
-                    print "[" + format_seconds(int(time.time())) + "] Progress: " + str(total) + " requests of " + str(self.threads * self.requests)
+                    print("[" + format_seconds(int(time.time())) + "] Progress: " + str(total) + " requests of " + str(self.threads * self.requests))
                     loop = 0
 
                 for t in self.thread_list:
-                    if t.isAlive():
+                    if t.is_alive():
                         wait = True
 
             if self.pid > 0:
@@ -129,8 +133,9 @@ class Flooder:
         parser.add_argument('-v', '--version', action='version', version='%(prog)s ' + self._version)
         parser.add_argument('-j', '--json', required=True, type=argparse.FileType('r'), help='requests list (required, json)')
         parser.add_argument('-t', '--threads', default=10, type=int, help='number of parallel threads to use (default: 10)')
+        parser.add_argument('-w', '--wait', default=30, type=int, help='request timeout in seconds (default: 30)')
         parser.add_argument('-r', '--requests', default=10, type=int, help='number of requests / thread (default: 10)')
-        parser.add_argument('-p', '--pid', type=int, help='PID for usage monitoring (handy when flooding local services)')
+        parser.add_argument('-p', '--pid', default=0, type=int, help='PID for usage monitoring (handy when flooding local services)')
         parser.add_argument('-ns', '--no-shuffle', default=False, action='store_true', help='disable shuffling of requests list')
         parser.add_argument('-nl', '--no-log', default=False, action='store_true', help='disable logging to file')
 
@@ -138,11 +143,10 @@ class Flooder:
         self.json = args.json
         self.threads = args.threads
         self.requests = args.requests
+        self.wait = args.wait
         self.pid = args.pid
-        if args.no_shuffle:
-            self.shuffle = False
-        if args.no_log:
-            self.log = False
+        self.shuffle = False
+        self.log = False
         return
 
     def _validate_list(self):
@@ -161,13 +165,13 @@ class Flooder:
                 if 'url' not in r:
                     raise Exception("List entry [" + str(i) + "] has no 'url' property")
 
-                if type(r['url']) not in [str, unicode]:
+                if type(r['url']) not in [str]:
                     raise Exception("List entry [" + str(i) + "] 'url' property is not a string")
 
                 if 'type' not in r:
                     raise Exception("List entry [" + str(i) + "] has no 'type' property")
 
-                if type(r['type']) not in [str, unicode]:
+                if type(r['type']) not in [str]:
                     raise Exception("List entry [" + str(i) + "] 'type' property is not a string")
 
                 if r['type'].lower() not in ['get', 'post', 'put', 'delete']:
@@ -185,19 +189,19 @@ class Flooder:
                         if 'name' not in e:
                             raise Exception("List entry [" + str(i) + "] 'params' entry  [" + str(j) + "]has no 'name' property")
 
-                        if type(e['name']) not in [str, unicode]:
+                        if type(e['name']) not in [str]:
                             raise Exception("List entry [" + str(i) + "] 'params' entry [" + str(j) + "] 'name' property is not a string")
 
                         if 'value' not in e:
                             raise Exception("List entry [" + str(i) + "] 'params' entry [" + str(j) + "] has no 'value' property")
 
-                        if type(e['value']) not in [str, unicode]:
+                        if type(e['value']) not in [str]:
                             raise Exception("List entry [" + str(i) + "] 'params' entry [" + str(j) + "] 'value' property is not a string")
                         j += 1
                 i += 1
             return True
         except Exception as e:
-            print e.args[0]
+            print(e.args[0])
             return False
 
     def _report(self):
@@ -297,7 +301,7 @@ class Flooder:
                     self.cpu_ceil = p
 
             for v in self.mem:
-                self.mem_sum += dec(v)
+                self.mem_sum += Decimal(str(v))
 
                 if self.mem_floor == 0:
                     self.mem_floor = v
@@ -316,9 +320,10 @@ class Flooder:
             self.mem_floor = round(self.mem_floor, 1)
             self.mem_average = round(self.mem_sum / len(self.mem), 1)
 
-        self.successful_fastest = '%.06f' % float(self.successful_fastest)
-        self.successful_slowest = '%.06f' % float(self.successful_slowest)
-        self.successful_average = '%.06f' % float(self.time_successful / (self.requests_successful * self.threads))
+        if self.requests_successful > 0:
+            self.successful_fastest = '%.06f' % float(self.successful_fastest)
+            self.successful_slowest = '%.06f' % float(self.successful_slowest)
+            self.successful_average = '%.06f' % float(self.time_successful / (self.requests_successful * self.threads))
 
         if self.requests_error > 0:
             self.error_fastest = '%.06f' % float(self.error_fastest)
@@ -335,21 +340,22 @@ class Flooder:
 
     def _out(self):
         sep = "-" * 35
-        out = []
-        out.append(sep)
-        out.append("Threads:              " + str(self.threads).rjust(13))
-        out.append("Requests:             " + str(self.requests).rjust(13))
-        out.append(sep)
-        out.append("Requests total:       " + str(self.requests_total).rjust(13))
-        out.append("Requests successful:  " + str(self.requests_successful).rjust(13))
+        out = [
+            sep,
+            "Threads:              " + str(self.threads).rjust(13),
+            "Requests:             " + str(self.requests).rjust(13), sep,
+            "Requests total:       " + str(self.requests_total).rjust(13),
+            "Requests successful:  " + str(self.requests_successful).rjust(13)
+        ]
         if self.requests_error > 0:
             out.append("Requests error:       " + str(self.requests_error).rjust(13))
         if self.requests_failed > 0:
             out.append("Requests failed:      " + str(self.requests_failed).rjust(13))
-        out.append(sep)
-        out.append("Successful fastest:   " + str(self.successful_fastest).rjust(13))
-        out.append("Successful slowest:   " + str(self.successful_slowest).rjust(13))
-        out.append("Successful average:   " + str(self.successful_average).rjust(13))
+        if self.requests_successful > 0:
+            out.append(sep)
+            out.append("Successful fastest:   " + str(self.successful_fastest).rjust(13))
+            out.append("Successful slowest:   " + str(self.successful_slowest).rjust(13))
+            out.append("Successful average:   " + str(self.successful_average).rjust(13))
         if self.requests_error > 0:
             out.append(sep)
             out.append("Error fastest:        " + str(self.error_fastest).rjust(13))
@@ -380,20 +386,22 @@ class Flooder:
             out.append(error)
 
         for line in out:
-            print line
+            print(line)
             if self.log:
                 logging.info(line)
         return
 
 
 class Thread(threading.Thread):
-    def __init__(self, group=None, target=None, name=None, verbose=None, args=()):
-        threading.Thread.__init__(self, group=group, target=target, name=name, verbose=verbose)
-        self._stop = False
+    def __init__(self, group=None, target=None, name=None, args=()):
+        threading.Thread.__init__(self, group=group, target=target, name=name)
+        args = list(args)
+        self.stop = False
         self._list = args[0]
         self._requests = args[1]
         self._shuffle = args[2]
         self._log = args[3]
+        self._timeout = args[4]
         self.results = []
         self.errors = []
         self.count = 0
@@ -402,11 +410,15 @@ class Thread(threading.Thread):
             random.shuffle(self._list)
         return
 
+    @staticmethod
+    def time():
+        return int(round(time.time() * 1000))
+
     def run(self):
         i = 0
         while i < self._requests:
             for e in self._list:
-                if self._stop:
+                if self.stop:
                     return
 
                 self.count += 1
@@ -422,32 +434,32 @@ class Thread(threading.Thread):
                         path, name = os.path.split(f['value'])
                         try:
                             files[f['name']] = (name, open(f['value'], 'rb'))
-                        except:
+                        except IOError:
                             if self._log:
                                 logging.error("Unable to read file: " + f['value'])
 
+                microseconds = self.time()
+                req = None
                 try:
                     if e['type'] == "get":
-                        req = requests.get(e['url'])
+                        req = requests.get(e['url'], timeout=self._timeout)
                     elif e['type'] == "delete":
-                        req = requests.delete(e['url'])
+                        req = requests.delete(e['url'], timeout=self._timeout)
                     elif e['type'] == "put":
-                        req = requests.put(e['url'], data=payload, files=files)
+                        req = requests.put(e['url'], data=payload, files=files, timeout=self._timeout)
                     else:
-                        req = requests.post(e['url'], data=payload, files=files)
-                    res = {'url': e['url'], 'data': payload, 'status': req.status_code, 'content': req.text, 'time': (dec(req.elapsed.microseconds) / 1000 / 1000)}
+                        req = requests.post(e['url'], data=payload, files=files, timeout=self._timeout)
+                    res = {'url': e['url'], 'data': payload, 'status': req.status_code,
+                           'time': (Decimal(req.elapsed.microseconds) / 1000 / 1000), 'content': req.text}
                     if self._log:
                         logging.debug(res)
                 except Exception as ex:
-                    try:
-                        elapsed = dec(req.elapsed.microseconds) / 1000 / 1000
-                    except NameError:
-                        elapsed = dec(0)
+                    elapsed = Decimal(str(self.time() - microseconds)) / 1000
+                    if req is not None:
+                        elapsed = Decimal(str(req.elapsed.microseconds)) / 1000 / 1000
 
-                    if str(ex.message.reason) not in self.errors:
-                        self.errors.append(str(ex.message.reason))
-
-                    res = {'url': e['url'], 'data': payload, 'status': 0, 'error': str(ex.message.reason), 'time': elapsed}
+                    res = {'url': e['url'], 'data': payload, 'status': 0, 'time': elapsed,
+                           'error': str(ex)}
                     if self._log:
                         logging.error(res)
 
@@ -458,11 +470,11 @@ class Thread(threading.Thread):
         return
 
     def stop(self):
-        self._stop = True
+        self.stop = True
 
 
 def format_seconds(val):
-    return time.strftime("%H:%M:%S", time.gmtime(dec(val)))
+    return time.strftime("%H:%M:%S", time.gmtime(float(str(val))))
 
 
 def check_pid(pid):
@@ -475,20 +487,21 @@ def check_pid(pid):
 
 
 def get_cpumem(pid):
-    us = commands.getoutput("ps -p " + str(pid) + " -o pcpu= -o rss=").split()
-    us[0] = round(dec(us[0]), 1)
-    us[1] = round(dec(us[1]) / 1024, 1)
+    us = list(subprocess.getoutput("ps -p " + str(pid) + " -o pcpu= -o rss=").split())
+    us[0] = round(Decimal(str(us[0])), 1)
+    us[1] = round(Decimal(str(us[1])) / 1024, 1)
     return us
 
 
-def stop_app(s, f):
+def stop_app():
     for t in Flooder.thread_list:
         t.stop()
-    print ""
+    print("")
     sys.exit()
+
+
 signal.signal(signal.SIGINT, stop_app)
 signal.signal(signal.SIGTERM, stop_app)
 
-
 if __name__ == '__main__':
-    flooder = Flooder()
+    Flooder()
