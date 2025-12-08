@@ -1,0 +1,4 @@
+# Development requirements for flooder.
+mypy
+pytest
+types-requests

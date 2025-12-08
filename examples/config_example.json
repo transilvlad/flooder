@@ -1,0 +1,13 @@
+[
+  {
+    "url": "http://flooder.requestcatcher.com/post",
+    "type": "POST",
+    "params": [
+      {"name": "Tony", "value": "IronMan"},
+      {"name": "Pepper", "value": "Rescue"}
+    ],
+    "files": [
+      {"name": "payload", "value": "examples/sample_data.txt"}
+    ]
+  }
+]
