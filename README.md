@@ -1,4 +1,4 @@
-# Flooder
+![Flooder](splash.jpg)
 
 Flooder is a flexible, multi-threaded HTTP request tool for stress testing APIs and web servers.
 It supports GET, POST, PUT, DELETE, and optionally more HTTP methods, parallel requests, configurable timeouts, and system resource monitoring.
